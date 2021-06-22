@@ -31,10 +31,26 @@ func main() {
   }
   
   do {
-    Mixin.getStructMethodAddress(TwoNumbers.sum)
+//    Mixin.getStructMethodAddress(TwoNumbers.sum)
+    let twoNumbers = TwoNumbers(a: 9, b: 10)
+    
+    runSum(TwoNumbers.sum)
+    
+    runSum(TwoNumbers.sum)
+    
+    TwoNumbers.sum(twoNumbers)()
   } catch {
     print("Failed to install mixin: \(error)")
   }
 }
 
 main()
+
+func runSum<T>(_ function: T) {
+  let twoNumbers = TwoNumbers(a: 2, b: 3)
+  if let function = function as? (TwoNumbers) -> () -> Int {
+    let partiallyApplied = function(twoNumbers)
+    let sum = partiallyApplied()
+    print("sum: \(sum)")
+  }
+}
