@@ -20,6 +20,12 @@ func workingTests() throws {
   print("")
 }
 
+extension TwoNumbers {
+  func distanceSquared() -> Int {
+    return a*a + b*b
+  }
+}
+
 // MARK: main
 
 func main() {
@@ -34,11 +40,11 @@ func main() {
 //    Mixin.getStructMethodAddress(TwoNumbers.sum)
     let twoNumbers = TwoNumbers(a: 9, b: 10)
     
-    runSum(TwoNumbers.sum)
-    
-    runSum(TwoNumbers.sum)
-    
-    TwoNumbers.sum(twoNumbers)()
+    print("a before: \(twoNumbers.getA())")
+    let sumAddress = Mixin.getStructMethodAddress(TwoNumbers.getA)
+    let productAddress = Mixin.getStructMethodAddress(TwoNumbers.distanceSquared)
+    overwrite_function(sumAddress, productAddress)
+    print("a after: \(twoNumbers.getA())")
   } catch {
     print("Failed to install mixin: \(error)")
   }

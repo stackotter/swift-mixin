@@ -52,12 +52,15 @@ struct TwoNumbers {
     self.b = b
   }
   
+  func getA() -> Int {
+    return a
+  }
+  
   func sum() -> Int {
-    print("hello")
     return a + b
   }
   
-  func product() -> Int {
-    return a * b
+  func difference() -> Int {
+    return a - b
   }
 }

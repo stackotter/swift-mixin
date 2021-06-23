@@ -19,6 +19,15 @@ struct Mixin {
     case incorrectMaxProtButFixed
   }
   
+  enum JumpOpcode: UInt8 {
+    case relative8 = 0xeb
+    case relative32 = 0xe9
+  }
+  
+  enum CallOpcode: UInt8 {
+    case relative32 = 0xe8
+  }
+  
   struct GenericFunction {
     var thunk: UInt
     var metadata: UnsafePointer<FunctionMetadata>
@@ -110,12 +119,80 @@ struct Mixin {
     }
   }
   
-  static func getStructMethodAddress<T>(_ method: T) {
+  static func getStructMethodAddress<T>(_ method: T) -> UInt {
     // getFunctionAddress just happens to be what we need to get the address of the part of the function that returns an address to the actual method implementation
     let thunkAddressGetterThunk = getFunctionAddress(method)
     let implicitClosurePartialApplyThunk = run_void_to_uint64_thunk(thunkAddressGetterThunk)
     print(String(format: "Implicit closure partial apply thunk: 0x%lx", implicitClosurePartialApplyThunk))
     
+    let popRBPOpcode: UInt8 = 0x5d
+    
+    var address = implicitClosurePartialApplyThunk
+    if let thunkPointer = UnsafePointer<UInt8>(bitPattern: implicitClosurePartialApplyThunk) {
+      var previousByte = thunkPointer.pointee
+      var i = 1
+      while true { // TODO: fix this, this is dangerous
+        let byte = thunkPointer.advanced(by: i).pointee
+        
+        if previousByte == popRBPOpcode, let jump = JumpOpcode(rawValue: byte) {
+          switch jump {
+            case .relative8:
+              address += UInt(i) + 2 // the end of the jump instruction
+              thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int8.self, capacity: 1, {
+                let offset = $0.pointee
+                let absoluteOffset = UInt(UInt8(abs(offset)))
+                if offset < 0 {
+                  address -= absoluteOffset
+                } else if offset > 0 {
+                  address += absoluteOffset
+                }
+              })
+            case .relative32:
+              address += UInt(i) + 5 // the end of the jump instruction
+              thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int32.self, capacity: 1, {
+                let offset = $0.pointee
+                let absoluteOffset = UInt(UInt32(abs(offset)))
+                if offset < 0 {
+                  address -= absoluteOffset
+                } else if offset > 0 {
+                  address += absoluteOffset
+                }
+              })
+          }
+          break
+        }
+        
+        previousByte = byte
+        i += 1
+      }
+      
+      if let thunkPointer = UnsafePointer<UInt8>(bitPattern: address) {
+        var i = 0
+        while true {
+          if thunkPointer.advanced(by: i).pointee == 0xe8,
+             thunkPointer.advanced(by: i+5).pointee == 0x48,
+             thunkPointer.advanced(by: i+6).pointee == 0x83,
+             thunkPointer.advanced(by: i+7).pointee == 0xc4,
+             thunkPointer.advanced(by: i+9).pointee == 0x5d,
+             thunkPointer.advanced(by: i+10).pointee == 0xc3 {
+            address += UInt(i) + 5
+            thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int32.self, capacity: 1, {
+              let offset = $0.pointee
+              let absoluteOffset = UInt(UInt32(abs(offset)))
+              if offset < 0 {
+                address -= absoluteOffset
+              } else if offset > 0 {
+                address += absoluteOffset
+              }
+            })
+            break
+          }
+          i += 1
+        }
+      }
+    }
+    
+    return address
   }
   
   static func getMachoMaxProt(ofExecutable executable: URL) throws -> UInt8 {
