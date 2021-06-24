@@ -7,6 +7,7 @@
 
 import Foundation
 import MixinTestC
+import Capstone
 
 struct Mixin {
   enum MixinError: LocalizedError {
@@ -17,6 +18,9 @@ struct Mixin {
     case invalidExecutableURL
     case getExecutablePathFailure
     case incorrectMaxProtButFixed
+    case failedToCreateDisassembler
+    case createPointerFailed
+    case disassembleInstructionFailed
   }
   
   enum JumpOpcode: UInt8 {
@@ -39,6 +43,8 @@ struct Mixin {
     var functionPointer: UInt
   }
   
+  static let maxInstructionSize = 15
+  
   static func setup() throws {
     guard let path = Bundle.main.executablePath else {
       print("Failed to get executable path (required to check maxProt of __TEXT segment")
@@ -47,9 +53,9 @@ struct Mixin {
     
     // Executable must have the correct max prot level set to allow WX permissions to be set for memory containing functions.
     let executable = URL(fileURLWithPath: path)
-    if try Mixin.getMachoMaxProt(ofExecutable: executable) != 0x07 {
+    if try Mixin.getMaxProt(ofExecutable: executable) != 0x07 {
       print("Setting max prot of executable. Restart executable for changes to take effect")
-      try Mixin.setMachoMaxProt(ofExecutable: executable, to: 0x7)
+      try Mixin.setMaxProt(ofExecutable: executable, to: 0x7)
       throw MixinError.incorrectMaxProtButFixed
     }
   }
@@ -109,9 +115,9 @@ struct Mixin {
   static func replaceStructMethod<T>(_ method: T, with replacement: T) throws {
     print(typeSignature(of: T.self))
 
-    let methodAddress = getFunctionAddress(method)
-    let replacementAddress = getFunctionAddress(replacement)
-    print(String(format: "Replacing method at 0x%lx with method at 0x%lx", methodAddress, replacementAddress))
+    let methodAddress = getStructMethodAddress(method)
+    let replacementAddress = getStructMethodAddress(replacement)
+    overwrite_function(methodAddress, replacementAddress)
 
     if let method = method as? () -> Int {
       let sum = method()
@@ -122,7 +128,7 @@ struct Mixin {
   static func getStructMethodAddress<T>(_ method: T) -> UInt {
     // getFunctionAddress just happens to be what we need to get the address of the part of the function that returns an address to the actual method implementation
     let thunkAddressGetterThunk = getFunctionAddress(method)
-    let implicitClosurePartialApplyThunk = run_void_to_uint64_thunk(thunkAddressGetterThunk)
+    let implicitClosurePartialApplyThunk = run_void_to_uint64_function(thunkAddressGetterThunk)
     print(String(format: "Implicit closure partial apply thunk: 0x%lx", implicitClosurePartialApplyThunk))
     
     let popRBPOpcode: UInt8 = 0x5d
@@ -195,12 +201,50 @@ struct Mixin {
     return address
   }
   
-  static func getMachoMaxProt(ofExecutable executable: URL) throws -> UInt8 {
+  static func getLength(ofFunctionAt address: UInt) throws -> UInt {
+    guard let disassembler = try? Capstone(arch: .x86, mode: [Mode.bits.b64]) else {
+      throw MixinError.failedToCreateDisassembler
+    }
+    
+    var offset: UInt = 0
+    while true {
+      guard let pointer = UnsafeRawPointer(bitPattern: address + offset) else {
+        throw MixinError.createPointerFailed
+      }
+      
+      let data = Data(bytes: pointer, count: maxInstructionSize)
+      
+      guard let instruction: X86Instruction = try disassembler.disassemble(code: data, address: UInt64(address), count: 1).first else {
+        throw MixinError.disassembleInstructionFailed
+      }
+      
+      offset += UInt(instruction.size)
+      
+      if instruction.bytes[0] == 0xc3 { // ret
+        break
+      }
+    }
+    
+    return offset
+  }
+
+  
+//  static func duplicateFunction<T>(_ function: T) -> T {
+//    withUnsafePointer(to: function, { pointer in
+//      pointer.withMemoryRebound(to: GenericFunction.self, capacity: 1, { pointer in
+//        let functionAddress = getFunctionAddress(function)
+//        UnsafeMutablePointer(mutating: pointer.pointee.metadata).pointee.functionPointer = duplicate_function(functionAddress)
+//      })
+//    })
+//    return function
+//  }
+  
+  static func getMaxProt(ofExecutable executable: URL) throws -> UInt8 {
     let machoData = try Data(contentsOf: executable)
     return machoData[0xa0]
   }
   
-  static func setMachoMaxProt(ofExecutable executable: URL, to newMaxProt: UInt8) throws {
+  static func setMaxProt(ofExecutable executable: URL, to newMaxProt: UInt8) throws {
     var machoData = try Data(contentsOf: executable)
     machoData[0xa0] = newMaxProt
     try machoData.write(to: executable)
