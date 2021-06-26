@@ -96,3 +96,51 @@ enum Numbers {
     }
   }
 }
+
+// MARK: replacement and backup functions
+
+extension TwoNumbers {
+  func difference() -> Int {
+    return a - b
+  }
+  
+  func sum_Original() -> Int {
+    return sum() // dummy
+  }
+  
+  static func getEvil() -> Int {
+    return 666
+  }
+  
+  static func getNice_Original() -> Int {
+    return getNice()
+  }
+}
+
+extension ThreeNumbers {
+  func product() -> Int {
+    return a * b * c
+  }
+  
+  func sum_Original() -> Int {
+    return sum() // dummy
+  }
+  
+  static func consecutive() -> ThreeNumbers {
+    return ThreeNumbers(a: 1, b: 2, c: 3)
+  }
+  
+  static func pythagorean_Original() -> ThreeNumbers {
+    return pythagorean()
+  }
+}
+
+extension Numbers {
+  func getDecimalRepresentationTimesTen() -> Int {
+    return getDecimalRepresentation_Original() * 10
+  }
+  
+  func getDecimalRepresentation_Original() -> Int {
+    return getDecimalRepresentation() // dummy
+  }
+}

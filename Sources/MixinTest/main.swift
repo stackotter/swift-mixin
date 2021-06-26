@@ -47,44 +47,20 @@ func workingTests() throws {
   try Mixin.replaceClassMethod(ThreeNumbers.sum, with: ThreeNumbers.product, on: ThreeNumbers.self)
   print("threeNumbers.sum() after : \(threeNumbers.sum())")
   print("threeNumbers.sum() backup: \(threeNumbers.sum_Original())")
-}
-
-extension TwoNumbers {
-  func difference() -> Int {
-    return a - b
-  }
   
-  func sum_Original() -> Int {
-    return sum() // dummy
-  }
+  // Testing replacement and backing up of static struct method
+  print("nice before: \(TwoNumbers.getNice())")
+  try Mixin.backupStaticMethod(TwoNumbers.getNice, to: TwoNumbers.getNice_Original)
+  try Mixin.replaceStaticMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
+  print("nice after : \(TwoNumbers.getNice())")
+  print("nice backup: \(TwoNumbers.getNice_Original())")
   
-  static func getEvil() -> Int {
-    return 666
-  }
-}
-
-extension ThreeNumbers {
-  func product() -> Int {
-    return a * b * c
-  }
-  
-  func sum_Original() -> Int {
-    return sum() // dummy
-  }
-  
-  static func consecutive() -> ThreeNumbers {
-    return ThreeNumbers(a: 1, b: 2, c: 3)
-  }
-}
-
-extension Numbers {
-  func getDecimalRepresentationTimesTen() -> Int {
-    return getDecimalRepresentation_Original() * 10
-  }
-  
-  func getDecimalRepresentation_Original() -> Int {
-    return getDecimalRepresentation() // dummy
-  }
+  // Testing replacement and backing up of static class method
+  print("pythagorean before: \(ThreeNumbers.pythagorean())")
+  try Mixin.backupStaticMethod(ThreeNumbers.pythagorean, to: ThreeNumbers.pythagorean_Original)
+  try Mixin.replaceStaticMethod(ThreeNumbers.pythagorean, with: ThreeNumbers.consecutive)
+  print("pythagorean after : \(ThreeNumbers.pythagorean())")
+  print("pythagorean backup: \(ThreeNumbers.pythagorean_Original())")
 }
 
 // MARK: main
@@ -98,26 +74,10 @@ func main() {
   }
   
   do {
-    print("nice before: \(TwoNumbers.getNice())")
-    try Mixin.replaceStaticMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
-    print("nice after : \(TwoNumbers.getNice())")
     
-    print("pythagorean before: \(ThreeNumbers.pythagorean())")
-    try Mixin.replaceStaticMethod(ThreeNumbers.pythagorean, with: ThreeNumbers.consecutive)
-    print("pythagorean after : \(ThreeNumbers.pythagorean())")
-//    runStatic(TwoNumbers.getNice)
-//    runStatic(TwoNumbers.getNice)
-//    runStatic(TwoNumbers.getEvil)
-//    runStatic(TwoNumbers.getEvil)
   } catch {
     print("Something to do with mixins failed: \(error)")
   }
 }
 
 main()
-
-func runStatic<T>(_ staticMethod: T) {
-  if let staticMethod = staticMethod as? () -> Int {
-    print("result: \(staticMethod())")
-  }
-}

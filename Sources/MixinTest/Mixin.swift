@@ -339,4 +339,11 @@ struct Mixin {
     let replacementAddress = try getStaticMethodAddress(of: replacement)
     overwrite_function(methodAddress, replacementAddress)
   }
+  
+  static func backupStaticMethod<T>(_ method: T, to destinationMethod: T) throws {
+    let methodAddress = try getStaticMethodAddress(of: method)
+    let destinationAddress = try getStaticMethodAddress(of: destinationMethod)
+    let duplicateAddress = try duplicateFunction(at: methodAddress)
+    overwrite_function(destinationAddress, duplicateAddress)
+  }
 }
