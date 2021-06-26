@@ -56,10 +56,14 @@ struct TwoNumbers {
   }
 }
 
-class ThreeNumbers {
+class ThreeNumbers: CustomStringConvertible {
   var a: Int
   var b: Int
   var c: Int
+  
+  var description: String {
+    return "(\(a), \(b), \(c))"
+  }
   
   init(a: Int, b: Int, c: Int) {
     self.a = a
@@ -69,6 +73,10 @@ class ThreeNumbers {
   
   func sum() -> Int {
     return a + b + c
+  }
+  
+  static func pythagorean() -> ThreeNumbers {
+    return ThreeNumbers(a: 3, b: 4, c: 5)
   }
 }
 

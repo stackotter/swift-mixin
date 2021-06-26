@@ -71,6 +71,10 @@ extension ThreeNumbers {
   func sum_Original() -> Int {
     return sum() // dummy
   }
+  
+  static func consecutive() -> ThreeNumbers {
+    return ThreeNumbers(a: 1, b: 2, c: 3)
+  }
 }
 
 extension Numbers {
@@ -95,8 +99,12 @@ func main() {
   
   do {
     print("nice before: \(TwoNumbers.getNice())")
-    try Mixin.replaceStaticStructMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
+    try Mixin.replaceStaticMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
     print("nice after : \(TwoNumbers.getNice())")
+    
+    print("pythagorean before: \(ThreeNumbers.pythagorean())")
+    try Mixin.replaceStaticMethod(ThreeNumbers.pythagorean, with: ThreeNumbers.consecutive)
+    print("pythagorean after : \(ThreeNumbers.pythagorean())")
 //    runStatic(TwoNumbers.getNice)
 //    runStatic(TwoNumbers.getNice)
 //    runStatic(TwoNumbers.getEvil)

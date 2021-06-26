@@ -326,15 +326,17 @@ struct Mixin {
     return methodAddress
   }
   
-  static func getStaticStructMethodAddress<T>(of staticMethod: T) throws -> UInt {
+  /// Returns the address of the specified static method.
+  static func getStaticMethodAddress<T>(of staticMethod: T) throws -> UInt {
     let nestedImplicitClosureAddress = implicitClosure(of: staticMethod)
     let methodAddress = try getStructMethodAddress(fromNestedImplicitClosureAt: nestedImplicitClosureAddress)
     return methodAddress
   }
   
-  static func replaceStaticStructMethod<T>(_ method: T, with replacement: T) throws {
-    let methodAddress = try getStaticStructMethodAddress(of: method)
-    let replacementAddress = try getStaticStructMethodAddress(of: replacement)
+  /// Replaces a static method with another static method. Static methods are the same on both structs and classes.
+  static func replaceStaticMethod<T>(_ method: T, with replacement: T) throws {
+    let methodAddress = try getStaticMethodAddress(of: method)
+    let replacementAddress = try getStaticMethodAddress(of: replacement)
     overwrite_function(methodAddress, replacementAddress)
   }
 }
