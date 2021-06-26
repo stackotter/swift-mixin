@@ -109,13 +109,18 @@ struct Mixin {
     }
   }
   
-  /// Returns the address of a method
+  /// Returns the address of a struct method.
   static func getStructMethodAddress<T>(_ method: T) throws -> UInt {
-    let partialApply = implicitClosure(of: method)
-    let partiallyAppliedThunk = run_void_to_uint64_function(partialApply)
-    
-    // Find the address that the thunk jumps to (the address of the next implicit closure)
-    var disassembler = try Disassembler(forFunctionAt: partiallyAppliedThunk)
+    let implicitClosureAddress = implicitClosure(of: method)
+    let nestedImplicitClosureAddress = run_void_to_uint64_function(implicitClosureAddress)
+    let methodAddress = try getStructMethodAddress(fromNestedImplicitClosureAt: nestedImplicitClosureAddress)
+    return methodAddress
+  }
+  
+  private static func getStructMethodAddress(fromNestedImplicitClosureAt nestedImplicitClosureAddress: UInt) throws -> UInt {
+    // TODO: fix variable naming to be more correct
+    // Find the address that the partial apply forwarder jumps to (the address of the next implicit closure)
+    var disassembler = try Disassembler(forFunctionAt: nestedImplicitClosureAddress)
     var partiallyApplied: UInt = 0
     while true {
       let instruction: X86Instruction = try disassembler.next()
@@ -319,5 +324,17 @@ struct Mixin {
     }
     
     return methodAddress
+  }
+  
+  static func getStaticStructMethodAddress<T>(of staticMethod: T) throws -> UInt {
+    let nestedImplicitClosureAddress = implicitClosure(of: staticMethod)
+    let methodAddress = try getStructMethodAddress(fromNestedImplicitClosureAt: nestedImplicitClosureAddress)
+    return methodAddress
+  }
+  
+  static func replaceStaticStructMethod<T>(_ method: T, with replacement: T) throws {
+    let methodAddress = try getStaticStructMethodAddress(of: method)
+    let replacementAddress = try getStaticStructMethodAddress(of: replacement)
+    overwrite_function(methodAddress, replacementAddress)
   }
 }

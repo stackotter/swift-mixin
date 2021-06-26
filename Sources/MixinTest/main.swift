@@ -94,7 +94,13 @@ func main() {
   }
   
   do {
-    
+    print("nice before: \(TwoNumbers.getNice())")
+    try Mixin.replaceStaticStructMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
+    print("nice after : \(TwoNumbers.getNice())")
+//    runStatic(TwoNumbers.getNice)
+//    runStatic(TwoNumbers.getNice)
+//    runStatic(TwoNumbers.getEvil)
+//    runStatic(TwoNumbers.getEvil)
   } catch {
     print("Something to do with mixins failed: \(error)")
   }
@@ -102,12 +108,8 @@ func main() {
 
 main()
 
-func runSum<T>(_ function: T) {
-  if let function = function as? (ThreeNumbers) -> () -> Int {
-    let threeNumbers = ThreeNumbers(a: 1, b: 2, c: 4)
-    
-    let sum = function(threeNumbers)()
-    
-    print("sum: \(sum)")
+func runStatic<T>(_ staticMethod: T) {
+  if let staticMethod = staticMethod as? () -> Int {
+    print("result: \(staticMethod())")
   }
 }
