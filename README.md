@@ -181,7 +181,7 @@ func sumPlusOne(a: Int, b: Int) -> Int {
 
 Notice that sum_Original does not have any parameter labels, this is just how SwiftMixin has to work when duplicating functions. Now when we replace `sum` with `sumPlusOne`, `sum(a: 4, b: 5)` will return 10 (yeah, I know, it's very useful).
 
-### Working With Structs, Enums and Classes (not static methods)
+### Working With Structs, Enums and Classes (excluding static methods)
 
 In the `Working With Functions` section I explained the basics. I'll start going a bit faster now.
 
@@ -191,7 +191,7 @@ Also, to back up methods we create a dummy method usually named `methodName_Orig
 
 Using SwiftMixin is pretty similar for structs, enums and classes but there are some subtle differences.
 
-#### Structs
+### Struct Methods
 
 Consider the following struct;
 
@@ -235,7 +235,7 @@ try Mixin.backupStructMethod(TwoNumbers.sum, to: TwoNumbers.sum_Original)
 
 Pretty straightforward right?
 
-#### Enums
+### Enum Methods
 
 Pretty much the same as struct methods just replace Struct with Enum;
 
@@ -264,7 +264,7 @@ try Mixin.backupEnumMethod(FlightId.toInt, to: FlightId.toInt_Original)
 try Mixin.replaceEnumMethod(FlightId.toInt, with: FlightId.toIntTimesTen)
 ```
 
-#### Classes
+### Class Methods
 
 The only difference from structs and enums is that you need to also pass the metatype of the class that you're doing stuff on because of how class methods work. For example;
 
@@ -305,7 +305,7 @@ try Mixin.backupClassMethod(ThreeNumbers.sum, to: ThreeNumbers.sum_Original, on:
 try Mixin.replaceClassMethod(ThreeNumbers.sum, with: ThreeNumbers.product, on: ThreeNumbers.self)
 ```
 
-### Working With Static Methods
+### Static Methods
 
 Static methods are the same for structs, enums and classes.
 
