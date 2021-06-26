@@ -340,6 +340,8 @@ struct Mixin {
     overwrite_function(methodAddress, replacementAddress)
   }
   
+  /// Backs up a static method to the specified destination method to allow the original method to still be called
+  /// even once it is replaced.
   static func backupStaticMethod<T>(_ method: T, to destinationMethod: T) throws {
     let methodAddress = try getStaticMethodAddress(of: method)
     let destinationAddress = try getStaticMethodAddress(of: destinationMethod)
