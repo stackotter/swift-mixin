@@ -1,6 +1,6 @@
 //
 //  swift-mixin.c
-//  MixinTest
+//  SwiftMixin
 //
 //  Created by Rohan van Klinken on 21/6/21.
 //

@@ -1,21 +1,18 @@
 //
 //  Mixin.swift
-//  MixinTest
+//  SwiftMixin
 //
 //  Created by Rohan van Klinken on 21/6/21.
 //
 
 import Foundation
-import MixinTestC
+import SwiftMixinC
 import Capstone
 
 enum MixinError: LocalizedError {
   case invalidFunction
-  case invalidStructMethod
   case addWritePermissions
   case removeWritePermissions
-  case invalidExecutableURL
-  case getExecutablePathFailure
   case incorrectMaxProtButFixed
   case failedToCreateDisassembler
   case createPointerFailed
@@ -28,33 +25,29 @@ enum MixinError: LocalizedError {
 // TODO: reduce the amount of c code.
 // TODO: get duplicating a function working.
 
-struct Mixin {
-  struct GenericFunction {
+public struct Mixin {
+  private struct GenericFunction {
     var thunk: UInt
     var metadata: UnsafePointer<FunctionMetadata>
   }
   
-  struct FunctionMetadata {
+  private struct FunctionMetadata {
     var arg1: UInt
     var arg2: UInt
     var functionPointer: UInt
   }
   
-  static let maxInstructionSize = 15
-  static let thunkSize = 5
+  private static let maxInstructionSize = 15
+  private static let thunkSize = 5
+
+  fileprivate init() { }
   
   /// Sets up and checks the mixin environment for this executable.
-  static func setup() throws {
-    guard let path = Bundle.main.executablePath else {
-      print("Failed to get executable path (required to check maxProt of __TEXT segment")
-      throw MixinError.getExecutablePathFailure
-    }
-    
+  public static func setup() throws {
     // Executable must have the correct max prot level set to allow write and execute for function memory
-    let executable = URL(fileURLWithPath: path)
-    if try MachO.getMaxProt(ofExecutable: executable) != 0x07 {
+    if try MachO.getMaxProt() != 0x07 {
       print("Setting max prot of executable. Restart executable for changes to take effect")
-      try MachO.setMaxProt(ofExecutable: executable, to: 0x7)
+      try MachO.setMaxProt(to: 0x7)
       throw MixinError.incorrectMaxProtButFixed
     }
   }
@@ -71,24 +64,24 @@ struct Mixin {
     return address
   }
   
-  static func typeSignature<T>(of variable: T.Type) -> String {
+  private static func typeSignature<T>(of variable: T.Type) -> String {
     return String(describing: T.self)
   }
   
   /// Checks if a value is a function. Relies on only function type signatures containing arrows (`->`).
-  static func isFunction<T>(_ potentialFunction: T) -> Bool {
+  private static func isFunction<T>(_ potentialFunction: T) -> Bool {
     // check the function's type's string representation for '->'
     let signature = typeSignature(of: T.self)
     return signature.split(separator: " ").contains("->")
   }
   
   /// Returns the address of the given function.
-  static func getFunctionAddress<T>(of function: T) -> UInt {
+  public static func getFunctionAddress<T>(of function: T) -> UInt {
     return implicitClosure(of: function)
   }
   
   /// Replaces a function with another function. Does NOT work for struct/class methods
-  static func replaceFunction<T>(_ function: T, with replacement: T) throws {
+  public static func replaceFunction<T>(_ function: T, with replacement: T) throws {
     guard isFunction(T.self) else {
       throw MixinError.invalidFunction
     }
@@ -110,7 +103,7 @@ struct Mixin {
   }
   
   /// Returns the address of a struct method.
-  static func getStructMethodAddress<T>(_ method: T) throws -> UInt {
+  public static func getStructMethodAddress<T>(_ method: T) throws -> UInt {
     let implicitClosureAddress = implicitClosure(of: method)
     let nestedImplicitClosureAddress = run_void_to_uint64_function(implicitClosureAddress)
     let methodAddress = try getStructMethodAddress(fromNestedImplicitClosureAt: nestedImplicitClosureAddress)
@@ -155,7 +148,7 @@ struct Mixin {
   }
   
   /// Replaces a struct's method with another method. Both methods must be on the same struct.
-  static func replaceStructMethod<T>(_ method: T, with replacement: T) throws {
+  public static func replaceStructMethod<T>(_ method: T, with replacement: T) throws {
     // TODO: check both methods are on the same struct.
     
     let methodAddress = try getStructMethodAddress(method)
@@ -163,8 +156,13 @@ struct Mixin {
     overwrite_function(methodAddress, replacementAddress)
   }
   
+  /// Replaces an enum's method with another method. Both methods must be on the same enum.
+  public static func replaceEnumMethod<T>(_ method: T, with replacement: T) throws {
+    try replaceStructMethod(method, with: replacement)
+  }
+  
   /// Replaces a struct's method with another method. Both methods must be on the same struct.
-  static func replaceClassMethod<T1, T2>(_ method: T1, with replacement: T1, on type: T2.Type) throws {
+  public static func replaceClassMethod<T1, T2>(_ method: T1, with replacement: T1, on type: T2.Type) throws {
     let methodAddress = try getClassMethodAddress(of: method, onType: type)
     let replacementAddress = try getClassMethodAddress(of: replacement, onType: type)
     overwrite_function(methodAddress, replacementAddress)
@@ -172,7 +170,7 @@ struct Mixin {
   
   /// Returns the length of a function in bytes. This relies on a function's compiled form only
   /// having one `ret` instruction which seems to always be true.
-  static func getLength(ofFunctionAt address: UInt) throws -> UInt {
+  private static func getLength(ofFunctionAt address: UInt) throws -> UInt {
     var disassembler = try Disassembler(forFunctionAt: address)
     
     while true {
@@ -187,7 +185,7 @@ struct Mixin {
   
   /// Returns a duplicate of the specified function so that it can be called even when
   /// the original is replaced.
-  static func duplicateFunction<T>(_ function: T) throws -> T {
+  public static func duplicateFunction<T>(_ function: T) throws -> T {
     let address = getFunctionAddress(of: function)
     let duplicateAddress = try duplicateFunction(at: address)
     withUnsafePointer(to: function, { pointer in
@@ -213,7 +211,7 @@ struct Mixin {
   
   /// Overwrites the destination method to be a backup that can be called to invoke the original function
   /// even after the original is replaced.
-  static func backupStructMethod<T>(_ method: T, to destination: T) throws {
+  public static func backupStructMethod<T>(_ method: T, to destination: T) throws {
     // TODO: check that the methods are both on the same struct
     
     let methodAddress = try getStructMethodAddress(method)
@@ -224,8 +222,14 @@ struct Mixin {
   }
   
   /// Overwrites the destination method to be a backup that can be called to invoke the original function
+  /// even after the original is replaced.
+  public static func backupEnumMethod<T>(_ method: T, to destination: T) throws {
+    try backupStructMethod(method, to: destination)
+  }
+  
+  /// Overwrites the destination method to be a backup that can be called to invoke the original function
   /// even after the original is replaced. Both methods must be on the specified type
-  static func backupClassMethod<T1, T2>(_ method: T1, to destination: T1, on type: T2.Type) throws {
+  public static func backupClassMethod<T1, T2>(_ method: T1, to destination: T1, on type: T2.Type) throws {
     // TODO: check that the methods are both on the same class
     
     let methodAddress = try getClassMethodAddress(of: method, onType: type)
@@ -237,7 +241,7 @@ struct Mixin {
   
   /// Returns the actual address of the specified method on the specified class. Both the
   /// method and the class have to be specified because of the inner workings of swift.
-  static func getClassMethodAddress<T1, T2>(of method: T1, onType type: T2.Type) throws -> UInt {
+  public static func getClassMethodAddress<T1, T2>(of method: T1, onType type: T2.Type) throws -> UInt {
     // Get the address of the class's metadata
     var classMetadataAddress: UInt = 0
     withUnsafePointer(to: type, { pointer in
@@ -327,14 +331,14 @@ struct Mixin {
   }
   
   /// Returns the address of the specified static method.
-  static func getStaticMethodAddress<T>(of staticMethod: T) throws -> UInt {
+  public static func getStaticMethodAddress<T>(of staticMethod: T) throws -> UInt {
     let nestedImplicitClosureAddress = implicitClosure(of: staticMethod)
     let methodAddress = try getStructMethodAddress(fromNestedImplicitClosureAt: nestedImplicitClosureAddress)
     return methodAddress
   }
   
   /// Replaces a static method with another static method. Static methods are the same on both structs and classes.
-  static func replaceStaticMethod<T>(_ method: T, with replacement: T) throws {
+  public static func replaceStaticMethod<T>(_ method: T, with replacement: T) throws {
     let methodAddress = try getStaticMethodAddress(of: method)
     let replacementAddress = try getStaticMethodAddress(of: replacement)
     overwrite_function(methodAddress, replacementAddress)
@@ -342,7 +346,7 @@ struct Mixin {
   
   /// Backs up a static method to the specified destination method to allow the original method to still be called
   /// even once it is replaced.
-  static func backupStaticMethod<T>(_ method: T, to destinationMethod: T) throws {
+  public static func backupStaticMethod<T>(_ method: T, to destinationMethod: T) throws {
     let methodAddress = try getStaticMethodAddress(of: method)
     let destinationAddress = try getStaticMethodAddress(of: destinationMethod)
     let duplicateAddress = try duplicateFunction(at: methodAddress)

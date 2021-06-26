@@ -1,3 +1,0 @@
-[submodule "Sources/disassembler"]
-	path = Sources/disassembler
-	url = https://github.com/btbd/disassembler.git

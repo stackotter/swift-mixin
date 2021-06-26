@@ -1,7 +1,7 @@
 import XCTest
 
-import MixinTestTests
+import SwiftMixinTests
 
 var tests = [XCTestCaseEntry]()
-tests += MixinTestTests.allTests()
+tests += SwiftMixinTests.allTests()
 XCTMain(tests)

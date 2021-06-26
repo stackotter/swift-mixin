@@ -1,3 +1,3 @@
-# MixinTest
+# SwiftMixin
 
-A description of this package.
+A package for dynamically editing compiled swift code in memory.

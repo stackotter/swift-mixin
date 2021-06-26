@@ -1,12 +1,11 @@
 // swift-tools-version:5.3
-// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
 let package = Package(
-  name: "MixinTest",
+  name: "SwiftMixin",
   products: [
-    .executable(name: "MixinTest", targets: ["MixinTest"])
+    .library(name: "SwiftMixin", targets: ["SwiftMixin"])
   ],
   dependencies: [
     .package(
@@ -16,13 +15,13 @@ let package = Package(
   ],
   targets: [
     .target(
-      name: "MixinTest",
-      dependencies: ["MixinTestC", "Capstone"]),
+      name: "SwiftMixin",
+      dependencies: ["SwiftMixinC", "Capstone"]),
     .target(
-      name: "MixinTestC",
+      name: "SwiftMixinC",
       dependencies: []),
     .testTarget(
-      name: "MixinTestTests",
-      dependencies: ["MixinTest"]),
+      name: "SwiftMixinTests",
+      dependencies: ["SwiftMixin"]),
   ]
 )
