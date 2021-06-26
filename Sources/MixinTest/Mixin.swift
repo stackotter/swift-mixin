@@ -206,14 +206,28 @@ struct Mixin {
     return duplicateAddress
   }
   
-  /// Overwrites the specified method to be a backup that can be called to invoke the original function
+  /// Overwrites the destination method to be a backup that can be called to invoke the original function
   /// even after the original is replaced.
-  static func backupMethod<T>(_ method: T, to destination: T) throws {
+  static func backupStructMethod<T>(_ method: T, to destination: T) throws {
+    // TODO: check that the methods are both on the same struct
+    
     let methodAddress = try getStructMethodAddress(method)
     let destinationAddress = try getStructMethodAddress(destination)
     let backup = try duplicateFunction(at: methodAddress)
     
     overwrite_function(destinationAddress, backup)
+  }
+  
+  /// Overwrites the destination method to be a backup that can be called to invoke the original function
+  /// even after the original is replaced. Both methods must be on the specified type
+  static func backupClassMethod<T1, T2>(_ method: T1, to destination: T1, on type: T2.Type) throws {
+    // TODO: check that the methods are both on the same class
+    
+    let methodAddress = try getClassMethodAddress(of: method, onType: type)
+    let destinationAddress = try getClassMethodAddress(of: destination, onType: type)
+    let backupAddress = try duplicateFunction(at: methodAddress)
+    
+    overwrite_function(destinationAddress, backupAddress)
   }
   
   /// Returns the actual address of the specified method on the specified class. Both the
@@ -227,7 +241,8 @@ struct Mixin {
       })
     })
     
-    // The method is located at an offset in the class's metadata. The rest of this function is for finding that offset.
+    // The method is located at an offset in the class's metadata when the method is not in an extension.
+    // If the method is from an extension then getting its address is more similar to struct methods.
     
     // Get the address of the partial apply forwarder (a thunk)
     let implicitClosureAddress = implicitClosure(of: method)
@@ -235,7 +250,6 @@ struct Mixin {
     var partialApplyForwarder: UInt = 0
     while true {
       let instruction: X86Instruction = try disassembler.next()
-      print("\(instruction.description)")
       if instruction.opcode[0] == 0x8d { // lea
         var offset: UInt32 = 0
         withUnsafePointer(to: instruction.bytes.advanced(by: 3), { pointer in
@@ -264,34 +278,44 @@ struct Mixin {
       }
     }
     
-    print(String(format: "nested closure: 0x%lx", nestedImplicitClosure))
+    // There are two different ways a class method is called.
+    // Its address is either;
+    // 1. stored at an offset in the class's metadata
+    // 2. hardcoded into the implicit closure if the method is from an extension
     
-    // Read the offset from the class's metadata that the implicit closure reads the address of the method from.
-    disassembler = try Disassembler(forFunctionAt: nestedImplicitClosure)
-    var methodOffset: Int32 = 0
-    while true {
-      let instruction: X86Instruction = try disassembler.next()
-      if instruction.opcode[0] == 0x8b && instruction.size == 7 {
-        withUnsafePointer(to: instruction.bytes.advanced(by: 3), { pointer in
-          pointer.withMemoryRebound(to: Int32.self, capacity: 1, { pointer in
-            methodOffset = pointer.pointee
-          })
+    // In both cases the important instruction is at offset 22
+    disassembler = try Disassembler(forFunctionAt: nestedImplicitClosure + 22)
+    let instruction: X86Instruction = try disassembler.next()
+    var methodAddress: UInt = 0
+    if instruction.opcode[0] == 0x8b && instruction.size == 7 { // option 1
+      // Read the offset in the class's metadata that the implicit closure reads the address of the method from.
+      try withUnsafePointer(to: instruction.bytes.advanced(by: 3), { pointer in
+        try pointer.withMemoryRebound(to: Int32.self, capacity: 1, { pointer in
+          let methodOffset = pointer.pointee
+          
+          // Access the method's address from its offset in the class's metadata
+          let methodAddressAddress: UInt
+          if methodOffset > 0 {
+            methodAddressAddress = classMetadataAddress + UInt(methodOffset)
+          } else {
+            methodAddressAddress = classMetadataAddress - UInt(UInt32(abs(methodOffset)))
+          }
+          
+          guard let address = UnsafeRawPointer(bitPattern: methodAddressAddress)?.load(as: UInt.self) else {
+            throw MixinError.createPointerFailed
+          }
+          
+          methodAddress = address
         })
-        break
+      })
+    } else if instruction.isIn(group: .call) { // option 2
+      // Read the destination of the call (dodgily)
+      let hexString = instruction.operandsString.dropFirst(2)
+      guard let address = UInt(hexString, radix: 16) else {
+        print(instruction.description)
+        throw MixinError.invalidCall
       }
-    }
-    
-    // Access the method's address from its offset in the class's metadata
-    let methodAddressAddress: UInt
-    if methodOffset > 0 {
-      methodAddressAddress = classMetadataAddress + UInt(methodOffset)
-    } else {
-      methodAddressAddress = classMetadataAddress - UInt(UInt32(abs(methodOffset)))
-    }
-    print(String(format: "method address address 0x%lx, offset 0x%lx", methodAddressAddress, methodOffset))
-    
-    guard let methodAddress = UnsafeRawPointer(bitPattern: methodAddressAddress)?.load(as: UInt.self) else {
-      throw MixinError.createPointerFailed
+      methodAddress = address
     }
     
     return methodAddress

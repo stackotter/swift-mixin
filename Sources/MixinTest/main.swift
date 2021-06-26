@@ -26,7 +26,7 @@ func workingTests() throws {
   // Testing replacement of a struct method with a method from an extension
   let twoNumbers = TwoNumbers(a: 9, b: 10)
   print("twoNumbers.sum() before: \(twoNumbers.sum())")
-  try Mixin.backupMethod(TwoNumbers.sum, to: TwoNumbers.sum_Original)
+  try Mixin.backupStructMethod(TwoNumbers.sum, to: TwoNumbers.sum_Original)
   try Mixin.replaceStructMethod(TwoNumbers.sum, with: TwoNumbers.difference)
   print("twoNumbers.sum() after: \(twoNumbers.sum())")
   print("twoNumbers.sum() backup: \(twoNumbers.sum_Original())")
@@ -35,10 +35,18 @@ func workingTests() throws {
   // Testing replacement and backing up of an enum method
   let number = Numbers.three
   print("number.getDecimalRepresentation() before: \(number.getDecimalRepresentation())")
-  try Mixin.backupMethod(Numbers.getDecimalRepresentation, to: Numbers.getDecimalRepresentation_Original)
+  try Mixin.backupStructMethod(Numbers.getDecimalRepresentation, to: Numbers.getDecimalRepresentation_Original)
   try Mixin.replaceStructMethod(Numbers.getDecimalRepresentation, with: Numbers.getDecimalRepresentationTimesTen)
   print("number.getDecimalRepresentation() after : \(number.getDecimalRepresentation())")
   print("number.getDecimalRepresentation() backup: \(number.getDecimalRepresentation_Original())")
+  
+  // Testing replacement and backing up of a class method
+  let threeNumbers = ThreeNumbers(a: 1, b: 2, c: 4)
+  print("threeNumbers.sum() before: \(threeNumbers.sum())")
+  try Mixin.backupClassMethod(ThreeNumbers.sum, to: ThreeNumbers.sum_Original, on: ThreeNumbers.self)
+  try Mixin.replaceClassMethod(ThreeNumbers.sum, with: ThreeNumbers.product, on: ThreeNumbers.self)
+  print("threeNumbers.sum() after : \(threeNumbers.sum())")
+  print("threeNumbers.sum() backup: \(threeNumbers.sum_Original())")
 }
 
 extension TwoNumbers {
@@ -86,28 +94,7 @@ func main() {
   }
   
   do {
-//    let threeNumbers = ThreeNumbers(a: 1, b: 2, c: 4)
-//    print("threeNumbers.sum() before: \(threeNumbers.sum())")
-//    try Mixin.backupMethod(ThreeNumbers.sum, to: ThreeNumbers.sum_Original)
-//    try Mixin.replaceStructMethod(ThreeNumbers.sum, with: ThreeNumbers.product)
-//    print("threeNumbers.sum() after : \(threeNumbers.sum())")
-//    print("threeNumbers.sum() backup: \(threeNumbers.sum_Original())")
-//
-//    print("TwoNumbers.getNice() before: \(TwoNumbers.getNice())")
-//    try Mixin.replaceStructMethod(TwoNumbers.getNice, with: TwoNumbers.getEvil)
-//    print("TwoNumbers.getNice() after : \(TwoNumbers.getNice())")
-//    runSum(ThreeNumbers.sum)
-//    print(Mixin.getFunctionAddress(of: ThreeNumbers.sum))
     
-//    runSum(ThreeNumbers.sum)
-//
-//    doSomethingWithType(ThreeNumbers.self)
-//    try Mixin.getClassMethodAddress(of: ThreeNumbers.sum, onType: ThreeNumbers.self)
-//
-    let threeNumbers = ThreeNumbers(a: 1, b: 2, c: 4)
-    print("sum before: \(threeNumbers.sum())")
-    try Mixin.replaceClassMethod(ThreeNumbers.sum, with: ThreeNumbers.product, on: ThreeNumbers.self)
-    print("sum after: \(threeNumbers.sum())")
   } catch {
     print("Something to do with mixins failed: \(error)")
   }
