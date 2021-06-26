@@ -47,20 +47,44 @@ struct TwoNumbers {
   var a: Int
   var b: Int
   
-  init(a: Int, b: Int) {
-    self.a = a
-    self.b = b
-  }
-  
-  func getA() -> Int {
-    return a
-  }
-  
   func sum() -> Int {
     return a + b
   }
   
-  func difference() -> Int {
-    return a - b
+  static func getNice() -> Int {
+    return 69
+  }
+}
+
+class ThreeNumbers {
+  var a: Int
+  var b: Int
+  var c: Int
+  
+  init(a: Int, b: Int, c: Int) {
+    self.a = a
+    self.b = b
+    self.c = c
+  }
+  
+  func sum() -> Int {
+    return a + b + c
+  }
+}
+
+enum Numbers {
+  case one
+  case two
+  case three
+  
+  func getDecimalRepresentation() -> Int {
+    switch self {
+      case .one:
+        return 1
+      case .two:
+        return 2
+      case .three:
+        return 3
+    }
   }
 }

@@ -9,29 +9,26 @@ import Foundation
 import MixinTestC
 import Capstone
 
+enum MixinError: LocalizedError {
+  case invalidFunction
+  case invalidStructMethod
+  case addWritePermissions
+  case removeWritePermissions
+  case invalidExecutableURL
+  case getExecutablePathFailure
+  case incorrectMaxProtButFixed
+  case failedToCreateDisassembler
+  case createPointerFailed
+  case disassembleInstructionFailed
+  case invalidJump
+  case invalidCall
+}
+
+// TODO: overwrite functions from swift instead of c if possible.
+// TODO: reduce the amount of c code.
+// TODO: get duplicating a function working.
+
 struct Mixin {
-  enum MixinError: LocalizedError {
-    case invalidFunction
-    case invalidStructMethod
-    case addWritePermissions
-    case removeWritePermissions
-    case invalidExecutableURL
-    case getExecutablePathFailure
-    case incorrectMaxProtButFixed
-    case failedToCreateDisassembler
-    case createPointerFailed
-    case disassembleInstructionFailed
-  }
-  
-  enum JumpOpcode: UInt8 {
-    case relative8 = 0xeb
-    case relative32 = 0xe9
-  }
-  
-  enum CallOpcode: UInt8 {
-    case relative32 = 0xe8
-  }
-  
   struct GenericFunction {
     var thunk: UInt
     var metadata: UnsafePointer<FunctionMetadata>
@@ -44,62 +41,62 @@ struct Mixin {
   }
   
   static let maxInstructionSize = 15
+  static let thunkSize = 5
   
+  /// Sets up and checks the mixin environment for this executable.
   static func setup() throws {
     guard let path = Bundle.main.executablePath else {
       print("Failed to get executable path (required to check maxProt of __TEXT segment")
       throw MixinError.getExecutablePathFailure
     }
     
-    // Executable must have the correct max prot level set to allow WX permissions to be set for memory containing functions.
+    // Executable must have the correct max prot level set to allow write and execute for function memory
     let executable = URL(fileURLWithPath: path)
-    if try Mixin.getMaxProt(ofExecutable: executable) != 0x07 {
+    if try MachO.getMaxProt(ofExecutable: executable) != 0x07 {
       print("Setting max prot of executable. Restart executable for changes to take effect")
-      try Mixin.setMaxProt(ofExecutable: executable, to: 0x7)
+      try MachO.setMaxProt(ofExecutable: executable, to: 0x7)
       throw MixinError.incorrectMaxProtButFixed
     }
   }
   
-  static func getFunctionAddress<T>(_ function: T) -> UInt {
-    var functionAddress: UInt = 0
+  /// For a function this returns the address of the function.
+  /// For a method it returns the address of the partially applied method.
+  private static func implicitClosure<T>(of function: T) -> UInt {
+    var address: UInt = 0
     withUnsafePointer(to: function, { pointer in
       pointer.withMemoryRebound(to: GenericFunction.self, capacity: 1, { pointer in
-        functionAddress = pointer.pointee.metadata.pointee.functionPointer
+        address = pointer.pointee.metadata.pointee.functionPointer
       })
     })
-    return functionAddress
+    return address
   }
   
   static func typeSignature<T>(of variable: T.Type) -> String {
     return String(describing: T.self)
   }
   
+  /// Checks if a value is a function. Relies on only function type signatures containing arrows (`->`).
   static func isFunction<T>(_ potentialFunction: T) -> Bool {
     // check the function's type's string representation for '->'
     let signature = typeSignature(of: T.self)
     return signature.split(separator: " ").contains("->")
   }
   
-  static func isStructMethod<T>(_ potentialFunction: T) -> Bool {
-    // check the function's type's string representation for '->'
-    let signature = typeSignature(of: T.self)
-    let arrows = signature.split(separator: " ").filter { $0 == "->" }
-    return arrows.count == 2 // TODO: find a better way to check for struct methods
+  /// Returns the address of the given function.
+  static func getFunctionAddress<T>(of function: T) -> UInt {
+    return implicitClosure(of: function)
   }
   
+  /// Replaces a function with another function. Does NOT work for struct/class methods
   static func replaceFunction<T>(_ function: T, with replacement: T) throws {
-    // Check function to replace is actually a function
     guard isFunction(T.self) else {
-      print("Generic type T must be a function")
       throw MixinError.invalidFunction
     }
     
-    let functionAddress = getFunctionAddress(function)
-    let replacementAddress = getFunctionAddress(replacement)
-    print(String(format: "Replacing function at 0x%lx with function at 0x%lx", functionAddress, replacementAddress))
-    
+    let functionAddress = implicitClosure(of: function)
+    let replacementAddress = implicitClosure(of: replacement)
     let result = overwrite_function(functionAddress, replacementAddress)
-
+    
     switch result {
       case -1:
         print("Failed to add write permissions to function memory")
@@ -112,141 +109,191 @@ struct Mixin {
     }
   }
   
-  static func replaceStructMethod<T>(_ method: T, with replacement: T) throws {
-    print(typeSignature(of: T.self))
-
-    let methodAddress = getStructMethodAddress(method)
-    let replacementAddress = getStructMethodAddress(replacement)
-    overwrite_function(methodAddress, replacementAddress)
-
-    if let method = method as? () -> Int {
-      let sum = method()
-      print("sum: \(sum)")
-    }
-  }
-  
-  static func getStructMethodAddress<T>(_ method: T) -> UInt {
-    // getFunctionAddress just happens to be what we need to get the address of the part of the function that returns an address to the actual method implementation
-    let thunkAddressGetterThunk = getFunctionAddress(method)
-    let implicitClosurePartialApplyThunk = run_void_to_uint64_function(thunkAddressGetterThunk)
-    print(String(format: "Implicit closure partial apply thunk: 0x%lx", implicitClosurePartialApplyThunk))
+  /// Returns the address of a method
+  static func getStructMethodAddress<T>(_ method: T) throws -> UInt {
+    let partialApply = implicitClosure(of: method)
+    let partiallyAppliedThunk = run_void_to_uint64_function(partialApply)
     
-    let popRBPOpcode: UInt8 = 0x5d
-    
-    var address = implicitClosurePartialApplyThunk
-    if let thunkPointer = UnsafePointer<UInt8>(bitPattern: implicitClosurePartialApplyThunk) {
-      var previousByte = thunkPointer.pointee
-      var i = 1
-      while true { // TODO: fix this, this is dangerous
-        let byte = thunkPointer.advanced(by: i).pointee
-        
-        if previousByte == popRBPOpcode, let jump = JumpOpcode(rawValue: byte) {
-          switch jump {
-            case .relative8:
-              address += UInt(i) + 2 // the end of the jump instruction
-              thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int8.self, capacity: 1, {
-                let offset = $0.pointee
-                let absoluteOffset = UInt(UInt8(abs(offset)))
-                if offset < 0 {
-                  address -= absoluteOffset
-                } else if offset > 0 {
-                  address += absoluteOffset
-                }
-              })
-            case .relative32:
-              address += UInt(i) + 5 // the end of the jump instruction
-              thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int32.self, capacity: 1, {
-                let offset = $0.pointee
-                let absoluteOffset = UInt(UInt32(abs(offset)))
-                if offset < 0 {
-                  address -= absoluteOffset
-                } else if offset > 0 {
-                  address += absoluteOffset
-                }
-              })
-          }
-          break
-        }
-        
-        previousByte = byte
-        i += 1
-      }
-      
-      if let thunkPointer = UnsafePointer<UInt8>(bitPattern: address) {
-        var i = 0
-        while true {
-          if thunkPointer.advanced(by: i).pointee == 0xe8,
-             thunkPointer.advanced(by: i+5).pointee == 0x48,
-             thunkPointer.advanced(by: i+6).pointee == 0x83,
-             thunkPointer.advanced(by: i+7).pointee == 0xc4,
-             thunkPointer.advanced(by: i+9).pointee == 0x5d,
-             thunkPointer.advanced(by: i+10).pointee == 0xc3 {
-            address += UInt(i) + 5
-            thunkPointer.advanced(by: i+1).withMemoryRebound(to: Int32.self, capacity: 1, {
-              let offset = $0.pointee
-              let absoluteOffset = UInt(UInt32(abs(offset)))
-              if offset < 0 {
-                address -= absoluteOffset
-              } else if offset > 0 {
-                address += absoluteOffset
-              }
-            })
-            break
-          }
-          i += 1
-        }
-      }
-    }
-    
-    return address
-  }
-  
-  static func getLength(ofFunctionAt address: UInt) throws -> UInt {
-    guard let disassembler = try? Capstone(arch: .x86, mode: [Mode.bits.b64]) else {
-      throw MixinError.failedToCreateDisassembler
-    }
-    
-    var offset: UInt = 0
+    // Find the address that the thunk jumps to (the address of the next implicit closure)
+    var disassembler = try Disassembler(forFunctionAt: partiallyAppliedThunk)
+    var partiallyApplied: UInt = 0
     while true {
-      guard let pointer = UnsafeRawPointer(bitPattern: address + offset) else {
-        throw MixinError.createPointerFailed
+      let instruction: X86Instruction = try disassembler.next()
+      if instruction.isIn(group: .jump) {
+        let hexString = instruction.operandsString.dropFirst(2)
+        guard let address = UInt(hexString, radix: 16) else {
+          print(instruction.description)
+          throw MixinError.invalidJump
+        }
+        partiallyApplied = address
+        break
       }
-      
-      let data = Data(bytes: pointer, count: maxInstructionSize)
-      
-      guard let instruction: X86Instruction = try disassembler.disassemble(code: data, address: UInt64(address), count: 1).first else {
-        throw MixinError.disassembleInstructionFailed
+    }
+    
+    // Find the address that the closure calls (the address of the actual function)
+    disassembler = try Disassembler(forFunctionAt: partiallyApplied)
+    var methodAddress: UInt = 0
+    while true {
+      let instruction: X86Instruction = try disassembler.next()
+      if instruction.isIn(group: .call) {
+        let hexString = instruction.operandsString.dropFirst(2)
+        guard let address = UInt(hexString, radix: 16) else {
+          print(instruction.description)
+          throw MixinError.invalidCall
+        }
+        methodAddress = address
+        break
       }
-      
-      offset += UInt(instruction.size)
-      
+    }
+    
+    return methodAddress
+  }
+  
+  /// Replaces a struct's method with another method. Both methods must be on the same struct.
+  static func replaceStructMethod<T>(_ method: T, with replacement: T) throws {
+    // TODO: check both methods are on the same struct.
+    
+    let methodAddress = try getStructMethodAddress(method)
+    let replacementAddress = try getStructMethodAddress(replacement)
+    overwrite_function(methodAddress, replacementAddress)
+  }
+  
+  /// Replaces a struct's method with another method. Both methods must be on the same struct.
+  static func replaceClassMethod<T1, T2>(_ method: T1, with replacement: T1, on type: T2.Type) throws {
+    let methodAddress = try getClassMethodAddress(of: method, onType: type)
+    let replacementAddress = try getClassMethodAddress(of: replacement, onType: type)
+    overwrite_function(methodAddress, replacementAddress)
+  }
+  
+  /// Returns the length of a function in bytes. This relies on a function's compiled form only
+  /// having one `ret` instruction which seems to always be true.
+  static func getLength(ofFunctionAt address: UInt) throws -> UInt {
+    var disassembler = try Disassembler(forFunctionAt: address)
+    
+    while true {
+      let instruction = try disassembler.next()
       if instruction.bytes[0] == 0xc3 { // ret
         break
       }
     }
     
-    return offset
+    return disassembler.offset
   }
+  
+  /// Returns a duplicate of the specified function so that it can be called even when
+  /// the original is replaced.
+  static func duplicateFunction<T>(_ function: T) throws -> T {
+    let address = getFunctionAddress(of: function)
+    let duplicateAddress = try duplicateFunction(at: address)
+    withUnsafePointer(to: function, { pointer in
+      pointer.withMemoryRebound(to: GenericFunction.self, capacity: 1, { pointer in
+        let metadataPointer = UnsafeMutablePointer(mutating: pointer.pointee.metadata)
+        metadataPointer.pointee.functionPointer = duplicateAddress
+      })
+    })
 
-  
-//  static func duplicateFunction<T>(_ function: T) -> T {
-//    withUnsafePointer(to: function, { pointer in
-//      pointer.withMemoryRebound(to: GenericFunction.self, capacity: 1, { pointer in
-//        let functionAddress = getFunctionAddress(function)
-//        UnsafeMutablePointer(mutating: pointer.pointee.metadata).pointee.functionPointer = duplicate_function(functionAddress)
-//      })
-//    })
-//    return function
-//  }
-  
-  static func getMaxProt(ofExecutable executable: URL) throws -> UInt8 {
-    let machoData = try Data(contentsOf: executable)
-    return machoData[0xa0]
+    return function
   }
   
-  static func setMaxProt(ofExecutable executable: URL, to newMaxProt: UInt8) throws {
-    var machoData = try Data(contentsOf: executable)
-    machoData[0xa0] = newMaxProt
-    try machoData.write(to: executable)
+  /// Creates a thunk that allows a function to still be called even after it is replaced.
+  private static func duplicateFunction(at address: UInt) throws -> UInt {
+    var disassembler = try Disassembler(forFunctionAt: address)
+    while disassembler.offset < thunkSize {
+      _ = try disassembler.next()
+    }
+    let numBytesToCopy = disassembler.offset
+    let duplicateAddress = duplicate_function(address, numBytesToCopy)
+    return duplicateAddress
+  }
+  
+  /// Overwrites the specified method to be a backup that can be called to invoke the original function
+  /// even after the original is replaced.
+  static func backupMethod<T>(_ method: T, to destination: T) throws {
+    let methodAddress = try getStructMethodAddress(method)
+    let destinationAddress = try getStructMethodAddress(destination)
+    let backup = try duplicateFunction(at: methodAddress)
+    
+    overwrite_function(destinationAddress, backup)
+  }
+  
+  /// Returns the actual address of the specified method on the specified class. Both the
+  /// method and the class have to be specified because of the inner workings of swift.
+  static func getClassMethodAddress<T1, T2>(of method: T1, onType type: T2.Type) throws -> UInt {
+    // Get the address of the class's metadata
+    var classMetadataAddress: UInt = 0
+    withUnsafePointer(to: type, { pointer in
+      pointer.withMemoryRebound(to: UInt.self, capacity: 1, { pointer in
+        classMetadataAddress = pointer.pointee
+      })
+    })
+    
+    // The method is located at an offset in the class's metadata. The rest of this function is for finding that offset.
+    
+    // Get the address of the partial apply forwarder (a thunk)
+    let implicitClosureAddress = implicitClosure(of: method)
+    var disassembler = try Disassembler(forFunctionAt: implicitClosureAddress)
+    var partialApplyForwarder: UInt = 0
+    while true {
+      let instruction: X86Instruction = try disassembler.next()
+      print("\(instruction.description)")
+      if instruction.opcode[0] == 0x8d { // lea
+        var offset: UInt32 = 0
+        withUnsafePointer(to: instruction.bytes.advanced(by: 3), { pointer in
+          pointer.withMemoryRebound(to: UInt32.self, capacity: 1, { pointer in
+            offset = pointer.pointee
+          })
+        })
+        partialApplyForwarder = UInt(disassembler.address + disassembler.offset) + UInt(instruction.size) + UInt(offset)
+        break
+      }
+    }
+    
+    // Find the address that the partial apply forwarder jumps to (the address of the next implicit closure)
+    disassembler = try Disassembler(forFunctionAt: partialApplyForwarder)
+    var nestedImplicitClosure: UInt = 0
+    while true {
+      let instruction: X86Instruction = try disassembler.next()
+      if instruction.isIn(group: .jump) {
+        let hexString = instruction.operandsString.dropFirst(2)
+        guard let address = UInt(hexString, radix: 16) else {
+          print(instruction.description)
+          throw MixinError.invalidJump
+        }
+        nestedImplicitClosure = address
+        break
+      }
+    }
+    
+    print(String(format: "nested closure: 0x%lx", nestedImplicitClosure))
+    
+    // Read the offset from the class's metadata that the implicit closure reads the address of the method from.
+    disassembler = try Disassembler(forFunctionAt: nestedImplicitClosure)
+    var methodOffset: Int32 = 0
+    while true {
+      let instruction: X86Instruction = try disassembler.next()
+      if instruction.opcode[0] == 0x8b && instruction.size == 7 {
+        withUnsafePointer(to: instruction.bytes.advanced(by: 3), { pointer in
+          pointer.withMemoryRebound(to: Int32.self, capacity: 1, { pointer in
+            methodOffset = pointer.pointee
+          })
+        })
+        break
+      }
+    }
+    
+    // Access the method's address from its offset in the class's metadata
+    let methodAddressAddress: UInt
+    if methodOffset > 0 {
+      methodAddressAddress = classMetadataAddress + UInt(methodOffset)
+    } else {
+      methodAddressAddress = classMetadataAddress - UInt(UInt32(abs(methodOffset)))
+    }
+    print(String(format: "method address address 0x%lx, offset 0x%lx", methodAddressAddress, methodOffset))
+    
+    guard let methodAddress = UnsafeRawPointer(bitPattern: methodAddressAddress)?.load(as: UInt.self) else {
+      throw MixinError.createPointerFailed
+    }
+    
+    return methodAddress
   }
 }
