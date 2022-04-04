@@ -1,10 +1,12 @@
 # SwiftMixin
 
-> Disclaimer: This package is very young and due to its nature, a small change to the swift compiler could brick this package. I will try my best to fix issues as fast as I can but this probably shouldn't be used in a production app.
+> Disclaimer: This package is very young and due to its nature, a small change to the swift compiler could brick this package. E.g. class method replacement got broken by Swift 5.6
 
 ## Quick Overview
 
-SwiftMixin provides all of the functionality required to overwrite functions and methods at runtime. It also allows you to create backups of functions before you overwrite them so that you can still use the original function. This package was made for a Swift plugin system ([Delta Plugin API](https://github.com/thegail/DeltaPluginAPI)). At the moment it only supports x86_64 but ARM64 support will be coming once my other project requires it.
+SwiftMixin provides all of the functionality required to overwrite functions and methods at runtime. It also allows you to create backups of functions before you overwrite them so that you can still use the original function. This package was made for a Swift plugin system ([Delta Plugin API](https://github.com/thegail/DeltaPluginAPI)), but was abandoned because it was decided that it was better if plugins were restricted to only using the public API so that are more stable.
+
+Only x86_64 is supported and ARM64 support probably won't be added any time soon.
 
 ## Install
 
@@ -341,5 +343,5 @@ try Mixin.replaceStaticMethod(HandyNumbers.getPalindrome, with: HandyNumbers.get
 1. Replacing initializers doesn't work yet.
 2. Replacing getters and setters is also not supported yet, I have some ideas for approaching them but I will not be working on this again for a little while.
 3. If the Swift compiler changes too much, this breaks.
-4. No ARM support yet
+4. No ARM support
 5. No 32-bit support (but that's legacy and macOS refuses to run 32-bit apps anyway now)
